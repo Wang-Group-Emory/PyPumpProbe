@@ -66,7 +66,6 @@ charge_i = observable(bare_system, 'charge_i=1')
 s_factor = Structure(bare_system, charge_i)
 
 
-
 # Find <O(t1)O(t2)>
 correlation = s_factor.correlation(tf=tf, dt=dt, visual=True)
 
@@ -76,10 +75,9 @@ spectrum = s_factor.spectrum(om_probe=om_probe, t=t,
                              tf=tf, dt=dt, visual=True)
 
 # Find the spectra (w = variable, t = fixed)
-spectra = s_factor.spectra_w(wi=wi, wf=wf, dw=dw, t=t,
+spectra  = s_factor.spectra_w(wi=wi, wf=wf, dw=dw, t=t,
                              tf=tf, dt=dt,
                              visual=True, verbose=True)
-
 # Find the spectra (w = variable, t = variable)
 spectra = s_factor.spectra(wi=wi, wf=wf, dw=dw,
                            tf=tf, dt_spec=dt_spec, dt=dt,
@@ -87,5 +85,4 @@ spectra = s_factor.spectra(wi=wi, wf=wf, dw=dw,
                            visual=True, verbose=True)
 
 # Find the equilibrium spectra (w = variable)
-spectra = s_factor.spectra_eq(wi=wi, wf=wf, dw=dw, visual=True)
-
+spectra  = s_factor.spectra_eq(wi=wi, wf=wf, dw=dw, visual=True)
