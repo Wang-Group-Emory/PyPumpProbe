@@ -25,7 +25,7 @@ Ne = 2
 # Pump-pulse intensity
 e0_pump = 0.5
 # Pump-pulse frequency (eV)
-om_pump = 3.1
+om_pump = 3
 # Pump-pulse width (fs)
 wd_pump = 2
 # Center of the pump pulse
@@ -51,8 +51,8 @@ bare_system = Pumped1Dchain(N=N,
                             t0_pump=t0_pump)
 
 # Set the observables you want to track
-O1 = observable(bare_system, 'total_charge')
-O2 = observable(bare_system, 'total_spin')
+O1 = observable(bare_system, 'charge_fluctuations')
+O2 = observable(bare_system, 'spin_fluctuations')
 
 O1_vec = np.zeros(len(time))
 O2_vec = np.zeros(len(time))
@@ -76,23 +76,21 @@ for a, t in enumerate(time):
 #-------------------
 # Plot your results
 #-------------------
-# For total charge (must be conserved)
+# For charge fluctuations
 fig = plt.figure(figsize=(cm2in(8.5), cm2in(8.5)))
 gs = fig.add_gridspec(1, 1)
 ax = fig.add_subplot(gs[0, 0])
 ax.plot(time, O1_vec, lw=2, color='C0')
 ax.set_xlabel(r'Time t ($\mathrm{\gamma/\hbar}$)')
-ax.set_ylabel(r'Total Charge (e)')
-ax.set_ylim([0, Ne+0.1])
+ax.set_ylabel(r'Charge fluctuations ($\mathrm{e^2}$)')
 fig.savefig('./results/charge.pdf', bbox_inches='tight')
 
-# For total spin (must be conserved)
+# For total spin fluctuations
 fig = plt.figure(figsize=(cm2in(8.5), cm2in(8.5)))
 gs = fig.add_gridspec(1, 1)
 ax = fig.add_subplot(gs[0, 0])
 ax.plot(time, O2_vec, lw=2, color='C0')
 ax.set_xlabel(r'Time t ($\mathrm{\gamma/\hbar}$)')
-ax.set_ylabel(r'Spin fluctuations ($\mathrm{\hbar/2}$)')
-ax.set_ylim([-Ne-0.1, Ne+0.1])
+ax.set_ylabel(r'Spin fluctuations ($\mathrm{\hbar^2/4}$)')
 fig.savefig('./results/spin.pdf', bbox_inches='tight')
 
