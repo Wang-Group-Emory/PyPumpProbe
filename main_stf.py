@@ -20,7 +20,7 @@ Ne = 2
 # Pump-pulse intensity
 e0_pump = 0.5
 # Pump-pulse frequency (eV)
-om_pump = 3.1
+om_pump = 3
 # Pump-pulse width (fs)
 wd_pump = 2
 # Center of the pump pulse

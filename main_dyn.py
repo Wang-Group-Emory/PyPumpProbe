@@ -29,11 +29,11 @@ om_pump = 3
 # Pump-pulse width (fs)
 wd_pump = 2
 # Center of the pump pulse
-t0_pump = 30
+t0_pump = 10
 
 # Time-parameters (fs)
 ti = 0
-tf = 60
+tf = 30
 dt = 0.01
 time = np.arange(ti, tf+dt, dt)
 
