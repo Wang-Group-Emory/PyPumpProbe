@@ -268,7 +268,8 @@ class Structure:
         return t_min, t_max, n_min, n_max, spectrum_value
 
     def spectra(self, wi=-3, wf=3, dw=0.5, tf=5, dt_spec=0.1, dt=0.1,
-                wd_probe=0.5, wd_cutoff=5, verbose=False, visual=False, cmap='magma'):
+                wd_probe=0.5, wd_cutoff=5, verbose=False, visual=False, cmap='magma',
+                save=False, filename='sneq_wt'):
         """ Function to evaluate the structure factor spectra for provided
             frequency range and time range.
 
@@ -296,6 +297,10 @@ class Structure:
             Visualize the 2D spectra after it is evaluated.
         cmap: string
             Colormap used in 2D spectra.
+        save: Bool
+            Save the result into a text file.
+        filename: string
+            Filename in which the result is being stored.
 
         Returns:
         --------
@@ -337,10 +342,20 @@ class Structure:
             ax.title.set_text(r'$\mathrm{S_{neq}(\omega, t)}$')
             fig.savefig('./results/sneq_wt.pdf', bbox_inches='tight')
 
+        # Save the file if chosen to
+        if save:
+            datafile = filename + '.txt'
+            timesfile = filename + '_times.txt'
+            omegafile = filename + '_omega.txt'
+            np.savetxt(datafile, spectra)
+            np.savetxt(timesfile, times)
+            np.savetxt(omegafile, omega)
+
         return spectra
 
     def spectra_w(self, wi=-3, wf=3, dw=0.5, t=2.5, tf=5, dt=0.1,
-                  wd_probe=0.5, wd_cutoff=5, verbose=False, visual=False):
+                  wd_probe=0.5, wd_cutoff=5, verbose=False, visual=False,
+                  save=False, filename='sneq_wt.txt'):
         """ Function to evaluate the structure factor spectra for provided
             frequency range at a fixed time.
 
