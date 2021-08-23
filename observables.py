@@ -1,5 +1,5 @@
 import numpy as np
-from operators import Ops
+from babyrixs.operators import Ops
 
 def observable(sys, tag='total_charge'):
     """ Function to return the matrix form of an observable

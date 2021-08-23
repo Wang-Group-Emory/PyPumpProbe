@@ -1,6 +1,7 @@
 import numpy as np
-from constants import HBAR
-from operators import Ops
+
+from babyrixs.constants import HBAR
+from babyrixs.operators import Ops
 
 from scipy.linalg import eigh
 

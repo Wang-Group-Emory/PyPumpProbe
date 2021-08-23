@@ -1,6 +1,6 @@
 import numpy as np
 
-from rk4on import Rk4on
+from babyrixs.rk4on import Rk4on
 
 import matplotlib.pyplot as plt
 from scipy.linalg import eigh

@@ -1,6 +1,6 @@
 import numpy as np
-from constants import HBAR
-from mystates import custom_state
+from babyrixs.constants import HBAR
+from babyrixs.mystates import custom_state
 
 class Rk4on:
 

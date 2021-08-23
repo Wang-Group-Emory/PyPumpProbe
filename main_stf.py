@@ -1,9 +1,9 @@
 import numpy as np
 
-from constants import HBAR
-from observables import observable
-from pumpedchain import Pumped1Dchain
-from structure import Structure
+from babyrixs.constants import HBAR
+from babyrixs.observables import observable
+from babyrixs.pumpedchain import Pumped1Dchain
+from babyrixs.structure import Structure
 
 #----------------------------
 # Parameters for bare system

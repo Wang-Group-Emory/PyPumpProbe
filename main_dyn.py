@@ -1,9 +1,9 @@
 import numpy as np
 
-from observables import observable
-from pumpedchain import Pumped1Dchain
-from rk4on import Rk4on
-from constants import HBAR
+from babyrixs.observables import observable
+from babyrixs.pumpedchain import Pumped1Dchain
+from babyrixs.rk4on import Rk4on
+from babyrixs.constants import HBAR
 
 import matplotlib.pyplot as plt
 
