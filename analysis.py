@@ -1,9 +1,7 @@
 import numpy as np
+
 from scipy import integrate
 from scipy.fft import fft, ifft
-
-from babyrixs.fit import Fit
-
 
 import matplotlib.pyplot as plt
 
@@ -11,7 +9,7 @@ class Analysis:
 
     # TODO: Can we implement something to find wd_probe directly from the data.
     def __init__(self, datafile, timesfile, omegafile,
-                 tcenter=None, wd_pump=None, wd_probe=None, order='wt'):
+                 wd_probe=None, order='wt'):
         """ Class to perform Fourier transform related analysis on
             the structure factor data.
 
@@ -26,12 +24,12 @@ class Analysis:
         omegafile: string
             The name of the .txt file which contains the omega values used in
             the spectra generation.
-        tcenter: float
-            Center of the pump-pulse.
-        wd_pump: float
-            Width of the pump-pulse.
         wd_probe: float
             The width of the probe-pulse.
+        order: string
+            Inform what the order of data. 'wt' means that the matrix of spectra
+            contains frequency 'w' on the first index of the matrix, and time 't'
+            is kept on the second index. 'tw' means that it is other way around.
 
         Attributes:
         -----------
@@ -44,35 +42,30 @@ class Analysis:
         omegafile: string
             The name of the .txt file which contains the omega values used in
             the spectra generation.
-        tcenter: float
-            Center of the pump-pulse.
-        wd_pump: float
-            Width of the pump-pulse.
         wd_probe: float
             The width of the probe-pulse.
-        order: string
-            'wt' means time is on x-axis in the data and 'tw' means it is on
-             y-axis.
         files_consistent: Bool
             If True, it means that the files are consistent in terms of the shape
             of the data.
         """
         self.datafile = datafile
         self.timesfile = timesfile
-        self.tcenter = tcenter
-        self.wd_pump = wd_pump
-        self.wd_probe = wd_probe
         self.omegafile = omegafile
+        self.wd_probe = wd_probe
         self.order = order
         self.files_consistent = self.check_data_consistency()
 
         return
 
+
     def check_data_consistency(self):
-        if self.order == 'wt':
+        if self.order=='wt':
             data = np.loadtxt(self.datafile)
-        else:
+        elif self.order=='tw':
             data = np.loadtxt(self.datafile).T
+        else:
+            raise valueError('Unknown order chosen for the spectra data file')
+
         times = np.loadtxt(self.timesfile)
         omega = np.loadtxt(self.omegafile)
         ny, nx = np.shape(data)
@@ -80,9 +73,148 @@ class Analysis:
         if nx==len(times) and ny==len(omega):
             status = True
         else:
-            raise valueError("The datafile for structure factor \
-                              does not match the size of time or omega file.")
+            raise valueError("The datafile for structure factor does not match the size of time or omega file.")
+
         return status
+
+
+    def k_function(self, Fk, N):
+        """ Function to process Fk (discrete fourier transform) and return
+            the continuous fourier transform fw by appropriate prefactor
+            multiplication.
+        """
+        k = np.arange(-N, N+1)
+        ark = -1j * np.pi * k * ( 1 - 0.5/N )
+        prefactor = np.exp(ark)
+        fw = prefactor * Fk
+        return fw
+
+
+    def k_function_ift(self, Fk, N):
+        """ Function to process Fk (discrete fourier transform) and return
+            the continuous fourier transform fw by appropriate prefactor
+            multiplication (note this has a + sign compared to the function
+            just above).
+        """
+        k = np.arange(-N, N+1)
+        ark = 1j * np.pi * k * (1 - 0.5/N)
+        prefactor = np.exp(ark)
+        fw = prefactor * Fk
+        return fw
+
+
+    def fast_ft(self, t, ft, visual=False):
+        """ Function to perform Fourier transfrom of data in time-domain
+            to the frequency-domain as well as the omega values.
+        """
+        # Check the length of the data and adjust it.
+        M = len(ft)
+        if np.mod(M, 2)==0:
+            # If M is even, we make it odd by repeating the last
+            # element one more time.
+            ft_new = np.zeros(M+1, dtype='complex')
+            t_new = np.zeros(M+1)
+            ft_new[0:M] = ft
+            ft_new[M] = ft[-1]
+            ft = ft_new
+            t_new[0:M] = t
+            t_new[M] = t[-1]
+            t = t_new
+            M = M + 1
+
+        # Find the N value such that M = 2N + 1
+        N = int( (M - 1) / 2 )
+
+        # Perform the FFT operation on ft
+        Fk = fft(ft)
+
+        # Extract the left, center, and right values from Fk
+        # while fliping the order of left and right values.
+        left_values = np.flip(Fk[1:N+1])
+        centr_value = Fk[0]
+        rite_values = np.flip(Fk[N+1:])
+
+        # Update Fk to get the correct order as -k to k
+        Fk[0:N] = left_values
+        Fk[N] = centr_value
+        Fk[N+1:] = rite_values
+
+        # Obtain fw from Fk by processing with k_function
+        fw = self.k_function(Fk, N)
+
+        # Get the list of times to extract dt
+        times = t
+        dt = times[1] - times[0]
+
+        # Update fw with proper normalization factors
+        fw = fw * dt
+
+        # Present the corressponding omega values
+        w = np.arange(-N, N+1) * ( np.pi / (N*dt) )
+
+        # Visualize if needed
+        if visual:
+            fig = plt.figure(figsize=(5, 3))
+            gs = fig.add_gridspec(1, 1)
+            ax = fig.add_subplot(gs[0, 0])
+            ax.plot(w, np.real(fw))
+            ax.set_xlabel(r"${\rm \omega' }$")
+            ax.set_ylabel(r"${\rm F(\omega') = \int dt' S(t') e^{i\omega' t'} }$")
+            fig.savefig('./results/s_of_t_fft.pdf', bbox_inches='tight')
+
+        return w, fw
+
+
+    def fast_ift(self, t, Fk):
+        """ Function to perform inverse Fourier transformation of data in
+            frequency domain to the data in time-domain and also return the
+            corressponding time values.
+        """
+        # Check the length of the data and adjust it.
+        M = len(Fk)
+        if np.mod(M, 2)==0:
+            # If M is even, we make it odd by repeating the last
+            # element one more time.
+            Fk_new = np.zeros(M+1, dtype='complex')
+            t_new = np.zeros(M+1)
+            Fk_new[0:M] = Fk
+            Fk_new[M] = Fk[-1]
+            Fk = Fk_new
+            t_new[0:M] = t
+            t_new[M] = t[-1]
+            t = t_new
+            M = M + 1
+
+        # Find the N value such that M = 2N + 1
+        N = int( (M - 1) / 2 )
+
+        # Use scipt ifft to get the inverse fourier transform
+        fm = ifft(Fk)
+
+        # Extract the left, center, and right values from fm
+        # and re-order them correctly
+        left_values = np.flip(fm[1:N+1])
+        centr_value = fm[0]
+        rite_values = np.flip(fm[N+1:])
+        fm[0:N] = left_values
+        fm[N] = centr_value
+        fm[N+1:] = rite_values
+
+        # Use DFT result to get contnuous FT result
+        fm = self.k_function_ift(fm, N)
+
+        # Obtain the dt value
+        times = t
+        dt = times[1] - times[0]
+
+        # Divide fm  by dt to get the final result
+        ftn = fm / (dt)
+
+        # Construct the time values
+        tn = t
+
+        return tn, ftn
+
 
     def integrate_w(self, visual=False):
         """ Function to integrate the S(omega, t) data on omega
@@ -90,235 +222,239 @@ class Analysis:
             it returns a 1D array which represents the values as a
             function of time once the integration on omega is complete.
         """
-        # Obtain the frequency (w) grid
+        # Find domega
         omega = np.loadtxt(self.omegafile)
-        # Extract S(w, t) and integrate over w
-        if self.order == 'wt':
-            data = np.loadtxt(self.datafile)
-        else:
-            data = np.loadtxt(self.datafile).T
+
+        # Extract data and integrate
+        data = np.loadtxt(self.datafile)
         data_integrated = integrate.simpson(data, omega, axis=0)
 
-        # Visualize the data if needed
+        # Visualize if needed
         if visual:
             fig = plt.figure(figsize=(5, 3))
             gs = fig.add_gridspec(1, 1)
             ax = fig.add_subplot(gs[0, 0])
             times = np.loadtxt(self.timesfile)
-            ax.plot(times, data_integrated, lw=2, color='C0')
-            ax.set_xlabel(r" Time $\mathrm{t'}$ ")
-            ax.set_ylabel(r"${\rm S(t') = \int d\omega\, S_{neq}(\omega, t')}$")
+            ax.plot(times, data_integrated)
+            ax.set_xlabel(' Time t')
+            ax.set_ylabel(r'${\rm S(t) = \int d\omega S(\omega, t)}$')
             fig.savefig('./results/s_of_t.pdf', bbox_inches='tight')
 
         return data_integrated
 
-    def find_seq_sneq_and_beta(self, threshold=4, avg_window=1,
-                               deviation=1, visual=False):
-        """ Function to return the equilibrium value of S(w, t). Here
-            threshold is the time from t=0 or t=tf that is neglected,
-            and window is the amount of time over which the averaging is
-            done to figure out sneq.
-        """
-        # Obtain s_of_t
-        s_of_t = self.integrate_w(visual=visual)
 
-        # Find index at which t = thresold which gives seq
+    def integrate_w_and_fft_t(self, visual=False):
+        """ Function to return the fourier transform on the time variable t
+            of S(w, t), after the integration on w (or omega) is completed.
+        """
+        # Get the data integrated on w (or omega)
+        data_integrated = self.integrate_w(visual=visual)
+
+        # Peform Fourier transform on this data
         times = np.loadtxt(self.timesfile)
-        pos = np.argmin( np.abs(times - threshold) )
-        seq = s_of_t[pos]
+        w, fw = self.fast_ft(times, data_integrated, visual=visual)
 
-        # Find pos_i and pos_f where you take mean near t = tf
-        tf = times[-1]
-        tavg_f = tf - threshold
-        tavg_i = tf - threshold - avg_window
-        pos_f = np.argmin( np.abs(times - tavg_f) )
-        pos_i = np.argmin( np.abs(times - tavg_i) )
-        sneq = np.mean( s_of_t[pos_i:pos_f] )
+        return w, fw
 
-        # Find the non-trivial window for plotting
-        tcenter = self.tcenter
-        wd_pump = self.wd_pump
-        window_i = tcenter - wd_pump/5
-        window_f = tcenter + wd_pump/5
-        window = window_f - window_i
-        beta = 1 / window
 
-        # Visulaize if needed
-        if visual:
-            new_f = sneq + (seq - sneq) * self.fermi(times,
-                                                     beta=beta,
-                                                     t0=tcenter)
-            fig = plt.figure(figsize=(5, 3))
-            gs = fig.add_gridspec(1, 1)
-            ax = fig.add_subplot(gs[0, 0])
-            ax.plot(times, s_of_t, lw=2, color='C0', label='S(t)')
-            ax.plot(times[::10], new_f[::10], lw=0.1, color='k',
-                    marker='.', markersize=2, label='Fermi component')
-            ax.axvline(times[pos], lw=0.5, ls=':', color='k')
-            ax.axvline(times[pos_i], lw=0.5, ls=':', color='k')
-            ax.axvline(times[pos_f], lw=0.5, ls=':', color='k')
-            ax.axvline(window_i, lw=0.5, ls=':', color='C3')
-            ax.axvline(window_f, lw=0.5, ls=':', color='C3')
-            ax.axvline(tcenter - 10*(2*wd_pump/5), lw=2, ls='-', color='C3')
-            ax.axvline(tcenter + 10*(2*wd_pump/5), lw=2, ls='-', color='C3',
-                       label='Integration window')
-            ax.legend(frameon=False)
-            ax.set_xlim([0, times[-1]])
-            ax.set_xlabel(r" Time $\mathrm{t}$ ")
-            ax.set_ylabel(r"${\rm S(t) = \int d\omega\, S_{neq}(\omega, t)}$")
-            ax.set_ylim([0.62, 0.82])
-            fig.savefig('./results/s_of_t_marked.pdf', bbox_inches='tight')
-
-        return seq, sneq, beta
-
-    def fermi(self, tau, beta=1, t0=10):
-        """ Function that returns the Fermi-function
+    def find_time_cutoff(self, s_of_t):
+        """ Function to automatically generate the time-cutoff for the data.
         """
-        den = np.exp( beta*(tau - t0) ) + 1
-        fermi = 1/den
-        return fermi
+        # Find the derivative of S_of_t
+        der = np.gradient(s_of_t)
+        # Add 1 to the derivative
+        der += 1
+        fig = plt.figure(figsize=(3, 3))
+        gs = fig.add_gridspec(1, 1)
+        ax = fig.add_subplot(gs[0, 0])
+        ax.plot(der)
+        fig.savefig('data.pdf', bbox_inches='tight')
+        # Compute when does this value not change by 10%
+        for a in range(len(s_of_t)):
+            criterion = np.abs(1 - der[a]) * 100
+            if criterion < 0.01:
+                break
 
-    def gauss(self, tau, t0=10, sigma=1):
-        """ Function that returns the Gaussian function
+        # Find the time when this happens
+        times = np.loadtxt(self.timesfile)
+        t_cut = times[a]
+
+        return t_cut
+
+    def find_ifft_cutoff(self):
+        """ Function to automatically generate the inverse fourier cutoff.
         """
-        norm = 1 / ( sigma * np.sqrt(2*np.pi))
-        gs = norm * np.exp( -(tau - t0)**2 / (2*sigma**2) )
-        return gs
+        wd_probe = self.wd_probe
+        ifft_cut = 2.8 * np.sqrt(2) / wd_probe
 
-    def integrate_FermiGauss(self, times, sigma=1, beta=1, t0=10,
-                             num_sigmas=10, num_kbTs=10, kbT_steps=50,
-                             visual=True):
-        """ Function that integrates the product of a Gaussian function
-            and fermi-function.
+        return ifft_cut
 
-        Parameters:
+
+    def make_time_cut(self, s_of_t, time_cutoff=4):
+        """ Function to return times after the cutoff is applied
+            and s_of_t after the cut-off is applied.
+        """
+        # Find the position of the given time_cutoff
+        times = np.loadtxt(self.timesfile)
+        cutting_time = times[0] + time_cutoff
+        pos = np.argmin(np.abs(times - cutting_time))
+
+        # Find the cut-out time and the cut out data
+        t_cut = times[pos:-pos]
+        s_of_t_cut = s_of_t[pos:-pos]
+
+        return t_cut, s_of_t_cut
+
+    def one_by_probepulse_ft(self, w, ifft_cutoff=4):
+        """ Function to elvaluate 1/ (fourier transform of probe pulse), this
+            can be derived analytically and is given by exp(-w^2 sigma^2 / 4)
+        """
+        # We add a small value to avoid Gaussian becoming zero.
+        den = np.exp( - ((w * self.wd_probe)**2) / 4)
+        value = 1 / den
+
+        # Kill all values above a cut-off
+        kill_index = (np.abs(w) > ifft_cutoff).nonzero()
+        value[kill_index] = 0
+
+        return value
+
+
+    def encode_equilibrium(self, t, s_of_t, eqb_time=10):
+        """ Function to encode information of equilibrium before
+            the action of pump pulse.
+        """
+        # Make the attach time
+        dt = t[1] - t[0]
+        ti = t[0] - eqb_time
+        tf = t[0] - dt
+        t_attach = np.arange(ti, tf+dt, dt)
+        # Make sure the full t_new is always odd
+        if np.mod(len(t_attach), 2) != 0:
+            t_attach = np.arange(ti+dt, tf+dt, dt)
+
+        # Make the attach s_of_t
+        s_attach = np.ones(len(t_attach)) * s_of_t[0]
+        # Attach to original data
+        t_new = np.concatenate((t_attach, t))
+        s_new = np.concatenate((s_attach, s_of_t))
+
+        return t_new, s_new
+
+
+    def give_QFI(self, method='fft', eqb_time=10,
+                 visual=False, verbose=True, **kwargs):
+        """ Function to return the quantum Fisher information (QFI) from
+            the provided spectra.
+
+        Paramaters:
         -----------
-        times: numpy 1D array
-            The times at which the integrated result is needed.
-        sigma: float
-            The width of the probe-pulse.
-        beta: float
-            The inverse temperature of the Fermi-function.
-        t0: float
-            The position where the Fermi-function is centered.
-        num_sigmas: float
-            The number of sigma lengths considered in the integration.
-        num_kbTs: float
-            The number of kbT lengths considered in the integration.
-        kbT_steps: int
-            The number of points considered between one kbT
+        method: string
+            The method taken to calculate QFI.
         visual: bool
-            Option to visualize results
+            Allows one to visualize steps taken to calculate the QFI
+            in a given chosen method.
+        verbose: bool
+            Display the steps happening in the code.
+        **kwargs: dict
+            The variable number of arguments used in the method,
+            passed as a dictionary.
+
         Returns:
         --------
-        FermiGauss: numpy 1D array
-            The final result of integration of the Fermi-function
-            and the Gaussian function.
+        t_qfi: numpy 1D array
+            The times at which QFI is calculated.
+        qfi: numpy 1D array
+            The corressponding QFI.
+
         """
-        # Create the integration window
-        kbT = 1/beta
-        ti = t0 - (num_kbTs*kbT) - (num_sigmas*sigma)
-        tf = t0 + (num_kbTs*kbT) + (num_sigmas*sigma)
-        dt = kbT / kbT_steps
-        time_int = np.arange(ti, tf+dt, dt)
 
-        # Now create the mesh grid on which the function is defined
-        t, tau = np.meshgrid(times, time_int)
+        if method=='fft':
+            """ This method accepts additional arguments as **kwargs
 
-        # Create Fermi-part
-        fermi_part = 1 / ( np.exp( beta*(tau - t0)) + 1)
+                Parameters:
+                -----------
+                time_cutoff: string or float
+                    The number of units of time that must be ignored in the
+                    begining and the end. If it is chosen as 'auto' then
+                    the code automatically finds the time-cutoff, if it is
+                    a number then it will be directly used as a cut-off.
+                ifft_cutoff: string or float
+                    Cutoff chosen for high-frequenies during inverse Fourier.
+                    If it is chosen as 'auto' then the code automatically
+                    choses the high-frequency cutoff. If it is a number, then
+                    the number times (1/wd_probe) becomes the high-frequency
+                    cutoff.
+            """
+            if verbose:
+                print('----------------')
+                print('Using FFT method')
+                print('----------------')
 
-        # Create the Gaussian part
-        gauss_part = np.exp( -(tau - t)**2 / (2*sigma**2) )
-        gauss_part *= 1 / (sigma*np.sqrt(2*np.pi))
+            # Set default vaues of **kwargs or extract them
+            if len(kwargs) == 0:
+                kwargs = {'time_cutoff': 'auto', 'ifft_cutoff': 'auto'}
+            time_cutoff = kwargs['time_cutoff']
+            ifft_cutoff = kwargs['ifft_cutoff']
 
-        # Take the product
-        product = fermi_part * gauss_part
+            # Integrate the spectra over frequency (w) to get time-dependent data
+            if verbose: print('Integrating spectra over frequency ...')
+            s_of_t = self.integrate_w(visual=visual)
 
-        # Perform integration using simpsons method
-        FermiGauss = integrate.simpson(product, time_int, axis=0)
+            # Perform time cut-off process.
+            if verbose: print('Cutting out unphysical times ...')
+            if time_cutoff=='auto':
+                time_cutoff = self.find_time_cutoff(s_of_t)
+            t_cut, s_of_t_cut = self.make_time_cut(s_of_t,
+                                     time_cutoff=time_cutoff)
 
-        # Visualize if needed
-        if visual:
-            fig = plt.figure(figsize=(5, 4))
-            gs = fig.add_gridspec(2, 1, hspace=0.5)
-            ax = fig.add_subplot(gs[0, 0])
-            bx = fig.add_subplot(gs[1, 0])
+            # Attach a longer equilibrium part
+            if verbose: print('Encoding equilibrium information ...')
+            t_cut, s_of_t_cut = self.encode_equilibrium(t_cut, s_of_t_cut,
+                                     eqb_time=eqb_time)
 
-            ax.plot(time_int, fermi_part[:, 0], color='C0', lw=2,
-                    label=r'${\rm f(\tau)}$')
-            ax.plot(time_int, gauss_part[:, 100], color='C1', lw=2,
-                    label=r'${\rm g(t, \tau)}$')
-            ax.set_xlabel(r'$\mathrm{\tau}$')
-            ax.set_ylabel(r'${\rm f(\tau)~and~g(t, \tau)}$')
-            ax.set_xlim([ti, tf])
-            ax.legend(frameon=False)
+            # Peform Fourier transform on this data
+            if verbose: print('Peforming Fourier transform (FT) ...')
+            w, fw = self.fast_ft(t_cut, s_of_t_cut, visual=visual)
 
-            bx.plot(time_int, fermi_part[:, 0], color='C0', lw=2,
-                    label=r'${\rm f(\tau)}$', ls='-')
-            bx.plot(times, FermiGauss, color='C3', lw=2)
-            bx.set_xlim([times[0], times[-1]])
-            bx.set_xlabel('t')
-            bx.set_ylabel(r'${\rm \int d\tau g(t, \tau) f(\tau)}$')
+            # Obtain the inverted Gaussian prefactor
+            if ifft_cutoff=='auto':
+                ifft_cutoff = self.find_ifft_cutoff()
+            prefactor = self.one_by_probepulse_ft(w,
+                             ifft_cutoff=ifft_cutoff)
 
-            fig.savefig('./results/fermigauss.pdf', bbox_inches='tight')
+            # Get the product of the the two terms above
+            Iw = prefactor * fw
 
-        return FermiGauss
+            # Visualize Iw if asked for
+            if visual:
+                fig = plt.figure(figsize=(4, 3))
+                gs = fig.add_gridspec(1, 1)
+                ax = fig.add_subplot(gs[0, 0])
+                ax.plot(w, np.real(Iw), color='k', label='Real')
+                ax.plot(w, np.imag(Iw), color='C0', label='Imag')
+                ax.legend(frameon=False)
+                ax.set_xlabel(r"Frequency $\mathrm{\omega'}$")
+                ax.set_ylabel(r"F($\omega'$)exp($\sigma_\mathrm{pr}^2\omega'^2/4$)")
+                fig.savefig('./results/Fwgauss.pdf', bbox_inches='tight')
+
+            # Do inverse FFT to get QFI
+            if verbose: print('Performing deconvolution by inverse FT ...')
+            t_qfi, qfi = self.fast_ift(t_cut, Iw)
+
+            # Multiply by remanining prefactors
+            if verbose: print('Finalizing and generating QFI ...')
+            qfi *= (8 * np.sqrt(np.pi) * self.wd_probe)
+
+            if verbose: print('QFI successully generated.')
+
+        elif method=='method2':
+            print(' This method is not yet functional.')
+        else:
+            raise valueError('Unknown choice of integration for QFI')
+
+        return t_qfi, qfi
 
 
-    def fit_QFI(self, N=10,
-                      threshold=4,
-                      avg_window=1,
-                      deviation=1,
-                      visual=False):
-        """ Function to return the quantum Fisher information from
-            the provided spectra.
-        """
-        # First get Seq, Sneq, beta
-        seq, sneq, beta = self.find_seq_sneq_and_beta(threshold=threshold,
-                              avg_window=avg_window,
-                              deviation=deviation,
-                              visual=visual)
 
-        #-------------------------------------
-        # Construction of the R_of_t function
-        #-------------------------------------
-        # Find index at which t = thresold which serves as starting point for fit
-        times = np.loadtxt(self.timesfile)
-        pos_i = np.argmin( np.abs(times - threshold) )
 
-        # Find pos_f that serves at the ending point for the fit
-        tf = times[-1]
-        tavg_f = tf - threshold
-        pos_f = np.argmin( np.abs(times - tavg_f) )
-
-        # Isolate the corressponding time and the data
-        times_iso = times[pos_i:pos_f]
-        s_of_t_iso = self.integrate_w(visual=visual)[pos_i:pos_f]
-
-        # Generate the FermiGauss part of the function
-        sigma = self.wd_probe / np.sqrt(2)
-        FermiGauss = self.integrate_FermiGauss(times_iso,
-                                          sigma=sigma,
-                                          beta=beta,
-                                          t0=self.tcenter,
-                                          visual=visual)
-        # R_of_t is constructed
-        R_of_t = (s_of_t_iso
-                  - sneq
-                  - (seq - sneq)*FermiGauss )
-
-        # Use R_of_t to find A_i, P_i, and W_i
-        make_fit = Fit(R_of_t, times_iso)
-        A_i, P_i, W_i = make_fit.give_Ai(N=N, sigma=sigma, visual=visual)
-
-        # Construct QFI
-        sum_of_gaussians = np.zeros(len(times_iso))
-        for a in range(N):
-            gauss = A_i[a] * np.exp(-(times_iso - P_i[a])**2 / (2*W_i[a]**2))
-            sum_of_gaussians += gauss
-
-        qfi_iso = sneq + (seq - sneq)*FermiGauss + sum_of_gaussians
-        qfi_iso *= (8 * self.wd_probe * np.sqrt(np.pi) )
-
-        return times_iso, qfi_iso

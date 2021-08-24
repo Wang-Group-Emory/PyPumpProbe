@@ -19,12 +19,10 @@ omegafile = './results/sneq_wt_tf=60_omega.txt'
 sneq_wt = Analysis(datafile,
                    timesfile,
                    omegafile,
-                   tcenter=tcenter,
-                   wd_pump=wd_pump,
                    wd_probe=wd_probe,
                    order='wt')
 
-t_qfi, qfi = sneq_wt.fit_QFI(N=10, visual=True)
+t_qfi, qfi = sneq_wt.give_QFI(visual=True, method='fft', eqb_time=10)
 
 # Get QFI directy from the Wave-function
 data = np.loadtxt('./results/direct_QFI_tf=60.txt')
@@ -36,11 +34,12 @@ fig = plt.figure(figsize=(4, 2.5))
 gs = fig.add_gridspec(1, 1)
 ax = fig.add_subplot(gs[0, 0])
 
-ax.plot(t_dir, 16*qfi_dir, lw=1, color='k',
+ax.plot(t_dir, 16*qfi_dir, lw=2, color='k',
         label=r'from WF')
-ax.plot(t_qfi, qfi, ls='--', color='C2', label='babyrixs', lw=1)
+ax.plot(t_qfi, np.real(qfi), ls='-', color='C3', label='babyrixs', lw=2)
 ax.legend(frameon=False)
 ax.set_xlabel(r' Time t (${\rm \hbar/\gamma}$)')
 ax.set_ylabel(r' ${\rm F_\mathrm{Q}(t)}$')
+ax.set_xlim([0, 60])
 fig.savefig('./results/qfi_check.pdf', bbox_inches='tight')
 
