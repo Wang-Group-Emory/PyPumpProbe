@@ -62,12 +62,19 @@ np.savetxt(omegafile, omega)
 
 sneq_wt  = Analysis(datafile,
                     timesfile,
-                    omegafile, wd_probe=wd_probe)
-sneq_t = sneq_wt.integrate_w()
-w_prime, sneq_w_prime = sneq_wt.integrate_w_and_fft_t()
+                    omegafile,
+                    wd_probe=wd_probe,
+                    order='wt')
+
+# Get the integration of spectra on w
+sneq_t = sneq_wt.integrate_w(visual=True)
+
+# Get the fourier transform on the spectra after prvious step
+w_prime, sneq_w_prime = sneq_wt.integrate_w_and_fft_t(visual=True)
 
 # Obtain the QFI
-t_qfi, qfi_code = sneq_wt.give_QFI(visual=True, eta=-7)
+kwargs = {'time_cutoff': 1, 'ifft_cutoff': 'auto'}
+t_qfi, qfi_code = sneq_wt.give_QFI(visual=True, method='fft', **kwargs)
 
 #------------------------------------
 # Analytical result in w_prime space
