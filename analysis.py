@@ -9,7 +9,8 @@ class Analysis:
 
     # TODO: Can we implement something to find wd_probe directly from the data.
     def __init__(self, datafile, timesfile, omegafile,
-                 wd_probe=None, order='wt'):
+                 wd_probe=None, order='wt', cutoff=2.7,
+                 dataorigin='sqst', inverselife=3):
         """ Class to perform Fourier transform related analysis on
             the structure factor data.
 
@@ -30,6 +31,18 @@ class Analysis:
             Inform what the order of data. 'wt' means that the matrix of spectra
             contains frequency 'w' on the first index of the matrix, and time 't'
             is kept on the second index. 'tw' means that it is other way around.
+        cutoff: float
+            This is a number that is used to control the high frequnecy cutoff
+            in the frequncy domain, beyond which the inverted Gaussian can
+            produce incorrect results.
+        dataorigin: float
+            This option allows babyrixs to identify the origin of the data.
+            Right now it supports two options.
+            1.) 'sqwt': This means that the data is a structure factor calculation.
+            2.) 'rixs': This means that the data is extracted from trRIXS calculation.
+        inverselife: float
+            This is the inverse-lifetime of the core-hole lifetime and is important
+            if the RIXS data is being used to calculate the QFI.
 
         Attributes:
         -----------
@@ -54,6 +67,8 @@ class Analysis:
         self.wd_probe = wd_probe
         self.order = order
         self.files_consistent = self.check_data_consistency()
+        self.cutoff = cutoff
+        self.dataorigin = dataorigin
 
         return
 
@@ -112,6 +127,7 @@ class Analysis:
         if np.mod(M, 2)==0:
             # If M is even, we make it odd by repeating the last
             # element one more time.
+            print('IT is even ...')
             ft_new = np.zeros(M+1, dtype='complex')
             t_new = np.zeros(M+1)
             ft_new[0:M] = ft
@@ -226,7 +242,11 @@ class Analysis:
         omega = np.loadtxt(self.omegafile)
 
         # Extract data and integrate
-        data = np.loadtxt(self.datafile)
+        if self.order=='tw':
+            data = np.loadtxt(self.datafile).T
+        else:
+            data = np.loadtxt(self.datafile)
+
         data_integrated = integrate.simpson(data, omega, axis=0)
 
         # Visualize if needed
@@ -241,6 +261,17 @@ class Analysis:
             fig.savefig('./results/s_of_t.pdf', bbox_inches='tight')
 
         return data_integrated
+
+    def integrate_w_and_cut_time(self, time_cutoff='auto', visual=False):
+        """ Function has same job as integrate_w but it also cuts off the
+            unphysical data in the begininng and end of the simulation.
+        """
+        s_of_t = self.integrate_w(visual=visual)
+        if time_cutoff=='auto':
+            time_cutoff = self.find_time_cutoff(s_of_t)
+        t_cut, s_of_t_cut = self.make_time_cut(s_of_t,
+                                               time_cutoff=time_cutoff)
+        return t_cut, s_of_t_cut
 
 
     def integrate_w_and_fft_t(self, visual=False):
@@ -264,15 +295,15 @@ class Analysis:
         der = np.gradient(s_of_t)
         # Add 1 to the derivative
         der += 1
-        fig = plt.figure(figsize=(3, 3))
-        gs = fig.add_gridspec(1, 1)
-        ax = fig.add_subplot(gs[0, 0])
-        ax.plot(der)
-        fig.savefig('data.pdf', bbox_inches='tight')
+        #fig = plt.figure(figsize=(3, 3))
+        #gs = fig.add_gridspec(1, 1)
+        #ax = fig.add_subplot(gs[0, 0])
+        #ax.plot(der)
+        #fig.savefig('data.pdf', bbox_inches='tight')
         # Compute when does this value not change by 10%
         for a in range(len(s_of_t)):
             criterion = np.abs(1 - der[a]) * 100
-            if criterion < 0.01:
+            if criterion < 0.001:
                 break
 
         # Find the time when this happens
@@ -285,7 +316,8 @@ class Analysis:
         """ Function to automatically generate the inverse fourier cutoff.
         """
         wd_probe = self.wd_probe
-        ifft_cut = 2.8 * np.sqrt(2) / wd_probe
+        cutoff = self.cutoff
+        ifft_cut = cutoff * np.sqrt(2) / wd_probe
 
         return ifft_cut
 
@@ -310,7 +342,7 @@ class Analysis:
             can be derived analytically and is given by exp(-w^2 sigma^2 / 4)
         """
         # We add a small value to avoid Gaussian becoming zero.
-        den = np.exp( - ((w * self.wd_probe)**2) / 4)
+        den = np.exp( - ((w * self.wd_probe)**2) / 4) + 10**(-30)
         value = 1 / den
 
         # Kill all values above a cut-off
@@ -341,8 +373,64 @@ class Analysis:
 
         return t_new, s_new
 
+    def encode_smooth(self,  t, s_of_t, eqb_time=100, beta=1):
+        """ Function to encode a smooth fermi function prior to the
+            the equilibrium data.
+        """
+        # Make the left attach time
+        dt = t[1] - t[0]
+        ti = t[0] - eqb_time
+        tf = t[0] - dt
+        t_l = np.arange(ti, tf+dt, dt)
 
-    def give_QFI(self, method='fft', eqb_time=10,
+        # Make the right attach time
+        ti = t[-1] + dt
+        tf = ti + eqb_time
+        t_r = np.arange(ti, tf+dt, dt)
+
+        # Make the left attach s_of_t
+        s_of_t_l = np.ones(len(t_l)) * s_of_t[0]
+
+        # Make the right attach of s_of_t
+        s_of_t_r = np.ones(len(t_r)) * s_of_t[-1]
+
+        # Attach the times together
+        t_attach = np.concatenate((t_l, t, t_r))
+
+        # Attach s_of_t together
+        s_of_t_attach = np.concatenate((s_of_t_l,
+                                        s_of_t,
+                                        s_of_t_r))
+
+        # Create the Smoothening function
+        t0_l = t_attach[0] + eqb_time/2
+        t0_r = t_attach[-1] - eqb_time/2
+        fermi_l = 1 / ( np.exp(beta*(t_attach - t0_l)) + 1)
+        fermi_r = 1 / ( np.exp(beta*(t_attach - t0_r)) + 1)
+        smooth_fn = fermi_r - fermi_l
+
+        # Make the new results
+        t_new = t_attach
+        s_new = s_of_t_attach * smooth_fn
+
+        # Create the new times and s_of_t (making sure they are odd)
+        M = len(t_attach)
+        if np.mod(M, 2)==0:
+            # If M is even, we make it odd by repeating the last
+            # element one more time.
+            s_odd = np.zeros(M+1)
+            t_odd = np.zeros(M+1)
+            s_odd[0:M] = s_new
+            s_odd[M] = s_new[-1]
+            t_odd[0:M] = t_new
+            t_odd[M] = t_new[-1]
+            t_new = t_odd
+            s_new = s_odd
+
+        return t_new, s_new
+
+
+    def give_QFI(self, method='fft', eqb_time=100, beta=1,
                  visual=False, verbose=True, **kwargs):
         """ Function to return the quantum Fisher information (QFI) from
             the provided spectra.
@@ -413,6 +501,14 @@ class Analysis:
             t_cut, s_of_t_cut = self.encode_equilibrium(t_cut, s_of_t_cut,
                                      eqb_time=eqb_time)
 
+            # Attach a smooth fermi-function (to remove Gibbs Phenomenon)
+            if beta == None:
+                if verbose: print('No soomthening is being performed ...')
+            else:
+                if verbose: print('Smoothing equilibrium using Fermi-function ...')
+                t_cut, s_of_t_cut = self.encode_smooth(t_cut, s_of_t_cut,
+                                                       eqb_time=eqb_time, beta=beta)
+
             # Peform Fourier transform on this data
             if verbose: print('Peforming Fourier transform (FT) ...')
             w, fw = self.fast_ft(t_cut, s_of_t_cut, visual=visual)
@@ -446,14 +542,82 @@ class Analysis:
             if verbose: print('Finalizing and generating QFI ...')
             qfi *= (8 * np.sqrt(np.pi) * self.wd_probe)
 
-            if verbose: print('QFI successully generated.')
+            if self.dataorigin=='sqwt':
+                qfi *= (1 / 8 * self.wd_probe * np.sqrt(np.pi))
+                if verbose: print('QFI successully generated.')
+            elif self.dataorigin=='rixs':
+                qfi *= 2*np.pi*(self.inverselife)**2 / (8 * self.wd_probe * np.sqrt(np.pi))
+                if verbose: print('QFI successully generated.')
+            else:
+                if verbose: print('QFI successully generated.')
 
         elif method=='method2':
             print(' This method is not yet functional.')
         else:
             raise valueError('Unknown choice of integration for QFI')
 
-        return t_qfi, qfi
+        return t_qfi, np.real(qfi), w, Iw
+
+    def give_rixs_SF(rixsfile,
+                     rixstime,
+                     rixsomega,
+                     rixsomg_i,
+                     w_in_choose=0,
+                     savefile=True,
+                     filename='rixs_SF.txt')
+        """
+        Funtion to ingest the file with rixs data and the spit out the
+        structure factor like data file for the give w_in (incoming frequency)
+
+        Parameters:
+        -----------
+        rixsfile: string
+            The name of the .txt file that contains the RIXS data. For the users
+            of ED code (built by Yao Wang), this is the data file you get from the
+            code (typically named as trRIXS.txt)
+        rixstime: string
+            The name of the .txt file which contains the times used in the
+            trRIXS spectra generation.
+        rixsomega: string
+            The name of the .txt file which contains the omega values used in
+            the spectra generation.
+        rixsomg_i: string
+            The name of the .txt file which contains the list of w_in (incoming
+            frequency) that are used in the generation of trRIXS spectra.
+        w_in_choose: float
+            This is the choice of the frequency which corressponds to the resonance.
+            The resonance is where the trRIXS spectra closely resembles the
+            structure factor.
+        savefile: Bool
+            Option to choose to save the output into a file.
+        filename: string
+            Name of the file into which the extracted data will be stored.
+
+        Returns:
+        --------
+        rixs_SF: numpy array
+            The 2D numpy array which picks the structure factor like data
+            from the the trRIXS data
+
+        """
+        print('Loading trRIXS data ...')
+        rixsdata = np.loadtxt(rixsfile)
+
+        # Load the omega_in and omega data
+        omg_in = np.loadtxt(rixsomg_i)
+        omg_l = np.loadtxt(rixsomega)
+
+        # Data as a function of time for w_in = 1.8
+        pos_in = np.argmin(np.abs(omg_in - w_in_choose))
+        pos_i = pos_in*len(omg_l)
+        pos_f = pos_i + len(omg_l)
+        rixs_SF = rixsdata[:, pos_i:pos_f]
+
+        # Save the file for usage
+        if savefile:
+            np.savetxt(filename, rixs_SF)
+
+        return rixs_SF
 
 
 
