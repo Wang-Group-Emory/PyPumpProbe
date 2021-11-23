@@ -6,7 +6,7 @@ from babyrixs.operators import Ops
 from scipy.linalg import eigh
 
 import matplotlib.pyplot as plt
-import beauty.tanya
+#import beauty.tanya
 
 
 class Pumped1Dchain:
