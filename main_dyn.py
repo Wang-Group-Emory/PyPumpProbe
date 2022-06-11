@@ -7,8 +7,8 @@ from babyrixs.constants import HBAR
 
 import matplotlib.pyplot as plt
 
-import beauty.tanya
-from beauty.morph import cm2in
+# import beauty.tanya
+# from beauty.morph import cm2in
 
 #------------
 # Parameters
@@ -77,7 +77,7 @@ for a, t in enumerate(time):
 # Plot your results
 #-------------------
 # For charge fluctuations
-fig = plt.figure(figsize=(cm2in(8.5), cm2in(8.5)))
+fig = plt.figure(figsize=(8.5/2.54, 8.5/2.54))
 gs = fig.add_gridspec(1, 1)
 ax = fig.add_subplot(gs[0, 0])
 ax.plot(time, O1_vec, lw=2, color='C0')
@@ -86,7 +86,7 @@ ax.set_ylabel(r'Charge fluctuations ($\mathrm{e^2}$)')
 fig.savefig('./results/charge.pdf', bbox_inches='tight')
 
 # For total spin fluctuations
-fig = plt.figure(figsize=(cm2in(8.5), cm2in(8.5)))
+fig = plt.figure(figsize=(8.5/2.54, 8.5/2.54))
 gs = fig.add_gridspec(1, 1)
 ax = fig.add_subplot(gs[0, 0])
 ax.plot(time, O2_vec, lw=2, color='C0')
